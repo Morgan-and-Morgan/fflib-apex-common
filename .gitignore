@@ -2,3 +2,5 @@
 *.prefs
 
 fflib/salesforce.schema
+/.project
+/local.build.properties
