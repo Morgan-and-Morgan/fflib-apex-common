@@ -9,7 +9,7 @@
     </path>
 
     <!-- Salesforce ANT jar -->
-    <property name="salesforce.ant.jar.filepath" value="${lib.dir}/ant-salesforce-39.0.jar" />
+    <property name="salesforce.ant.jar.filepath" value="${lib.dir}/ant-salesforce-40.0.jar" />
 
     <taskdef resource="com/salesforce/antlib.xml" uri="antlib:com.salesforce">
         <classpath>
