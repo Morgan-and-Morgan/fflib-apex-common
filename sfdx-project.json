@@ -1,11 +1,21 @@
 {
+  "sfdcLoginUrl": "https://login.salesforce.com",
+  "sourceApiVersion": "41.0",
   "packageDirectories": [
     {
-      "path": "force-app",
-      "default": true
+      "path": "src",
+      "default": true,
+      "id": "0Ho1J000000000BSAQ",
+      "versionName": "v0.1 trial",
+      "versionDescription": "ver 0.1 with no ancestor with no namespace",
+      "versionNumber": "0.1.0.NEXT",
+      "ancestorId": "",
+      "dependencies": [
+        {
+            "packageId": "0Ho1J0000000006SAA",
+            "versionNumber": "0.1.0.LATEST"
+        }
+       ]
     }
-  ],
-  "namespace": "",
-  "sfdcLoginUrl": "https://login.salesforce.com",
-  "sourceApiVersion": "40.0"
+  ]
 }

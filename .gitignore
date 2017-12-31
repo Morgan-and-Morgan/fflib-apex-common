@@ -25,4 +25,9 @@ scratch.txt
 # Eclipse IDE Related
 .project
 .settings/
+
+# VS Code IDE Related
+.vscode/
+
+# SFDX Related
 .sfdx/
