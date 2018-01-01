@@ -7,7 +7,6 @@ temp/
 local.build.properties
 /zdoc/
 /deploy/*
-/config/
 /debug/
 scratch.txt
 **/dep-dir.txt
