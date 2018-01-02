@@ -64,7 +64,7 @@ node {
                 
                 for ( upstreamDependency in packageDirectory.dependencies ) {
                     echo( "upstreamDependency == ${upstreamDependency} -- installing to test org")
-                    packageVersionIdCSV.add( upstreamDependency.packageId )
+                    packageVersionIdArray.add( upstreamDependency.packageId )
                 }
             }
 
