@@ -51,19 +51,40 @@ node {
             // process the sfdx-project.json file for later user
             echo('Deserialize the sfdx-project.json ')
             def sfdxProjectFileContents = readFile file: 'sfdx-project.json'
+            echo("sfdxProjectFileContents == ${sfdxProjectFileContents}")
             SFDX_PROJECT = jsonSlurper.parseText( sfdxProjectFileContents )
         }
 
         stage('Process Resources') {
             // if the project has upstring dependencies, install those to the scratch org first
-            echo("Project has dependencies : ${SFDX_PROJECT.packageDirectories[0].dependencies}")
-
+            def packageVersionIdArray = String[]
             for ( packageDirectory in SFDX_PROJECT.packageDirectories ) {
+
                 echo( "packageDirectory ==  ${packageDirectory}" )
+                
                 for ( upstreamDependency in packageDirectory.dependencies ) {
-                    echo( "upstreamDependency == ${upstreamDependency}")
+                    echo( "upstreamDependency == ${upstreamDependency} -- installing to test org")
+                    packageVersionIdCSV.add( upstreamDependency.packageId )
                 }
             }
+
+            if ( ! packageVersionIdArray.isEmpty() ) {
+                echo("finding all package versions for package ids found")
+                rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:list --package2ids ${packageVersionIdArray.join(',')} --json "
+                printf rmsg
+                
+                def jsonSlurper = new JsonSlurperClassic()
+                def allPackageVersionsAvailable = jsonSlurper.parseText(rmsg)
+                echo( "allPackageVersionsAvailable == ${allPackageVersionsAvailable}")
+            } else {
+                echo( "upstream dependencies found for this project" )
+            }
+            
+
+                    //rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:auth:jwt:grant --clientid ${CONNECTED_APP_CONSUMER_KEY} --username ${HUB_ORG} --jwtkeyfile ${jwt_key_file} --setdefaultdevhubusername --instanceurl ${SFDC_HOST}"
+                    //rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:package:install -i 04t1J0000004UBgQAM --targetusername 
+                    //if (rc != 0) { error 'hub org authorization failed' }
+
         }
 
         stage('Compile') {
