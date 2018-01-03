@@ -129,5 +129,9 @@ node {
                 error "deletion of scratch org ${HUB_ORG} failed"
             }
         }
+
+        stage('Post Build Notifications') {
+            slackSend channel: '#sf-ci-alerts', failOnError: true, message: 'started ${env.JOB_NAME} ${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>)', tokenCredentialId: 'Slack-Integration-Token-SF-CI-ALERTS'
+        }
     }
 }
