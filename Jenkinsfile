@@ -1,5 +1,11 @@
 #!groovy
 import groovy.json.JsonSlurperClassic
+
+@NonCPS
+def jsonParse(def json) {
+    new groovy.json.JsonSlurperClassic().parseText(json)
+}
+
 node {
 
     def BUILD_NUMBER=env.BUILD_NUMBER
@@ -50,7 +56,8 @@ node {
 
             // process the sfdx-project.json file for later user
             echo('Deserialize the sfdx-project.json ')
-            def sfdxProjectFileContents = readJSON(file: 'sfdx-project.json')
+            //def sfdxProjectFileContents = readJSON(file: 'sfdx-project.json')
+            def sfdxProjectFileContents = jsonParse( readFile('sfdx-project.json') )
             //echo("sfdxProjectFileContents == ${sfdxProjectFileContents}")
             SFDX_PROJECT = sfdxProjectFileContents
         }
