@@ -50,14 +50,14 @@ node {
 
             // process the sfdx-project.json file for later user
             echo('Deserialize the sfdx-project.json ')
-            def sfdxProjectFileContents = readFile file: 'sfdx-project.json'
-            echo("sfdxProjectFileContents == ${sfdxProjectFileContents}")
-            SFDX_PROJECT = jsonSlurper.parseText( sfdxProjectFileContents )
+            def sfdxProjectFileContents = readJSON(file: 'sfdx-project.json')
+            //echo("sfdxProjectFileContents == ${sfdxProjectFileContents}")
+            SFDX_PROJECT = sfdxProjectFileContents
         }
 
         stage('Process Resources') {
             // if the project has upstring dependencies, install those to the scratch org first
-            def packageVersionIdArray = String[]
+            def packageVersionIdArray = []
             for ( packageDirectory in SFDX_PROJECT.packageDirectories ) {
 
                 echo( "packageDirectory ==  ${packageDirectory}" )
