@@ -6,6 +6,64 @@ def jsonParse(def json) {
     new groovy.json.JsonSlurperClassic().parseText(json)
 }
 
+def resolvePackageVersionId( def allPackageVersionsAvailable, def package2Id, def versionNumber ) {
+    /* 
+    allPackageVersionsAvailable == 
+    [
+        result:
+        [
+            [
+                Package2Id:0Ho1J0000000006SAA, 
+                Branch:null, 
+                MajorVersion:0, 
+                MinorVersion:1, 
+                PatchVersion:0, 
+                BuildNumber:1, 
+                Version:0.1.0.1, 
+                Tag:null, 
+                SubscriberPackageVersionId:04t1J0000004UCKQA2, 
+                CreatedDate:2017-12-09 19:05, 
+                Id:05i1J0000000006QAA, 
+                NamespacePrefix:null, 
+                IsBeta:true
+            ]
+        ,   [
+                Package2Id:0Ho1J0000000006SAA, 
+                Branch:null, 
+                MajorVersion:0, 
+                MinorVersion:1, 
+                PatchVersion:0, 
+                BuildNumber:2, 
+                Version:0.1.0.2, 
+                Tag:null, 
+                LastModifiedDate:2017-12-09 19:30, 
+                Description:ver 0.1 with no ancestor with no namespace, 
+                Released:false, 
+                Package2Name:mm_fflib_apex_mocks, 
+                Name:v0.1 trial, 
+                SubscriberPackageVersionId:04t1J0000004UCPQA2, 
+                CreatedDate:2017-12-09 19:30, 
+                Id:05i1J000000000BQAQ, 
+                NamespacePrefix:null, 
+                IsBeta:true
+            ]
+        ]
+        , status:0
+    ]
+    */
+
+                        if ( upstreamDependency.versionNumber.endsWith('LATEST') ) {
+                            echo( 'found a version number with latest' )
+                            // need to match the package id and version number to return the package version id.
+                            // need a function with two inputs
+
+                        }
+                        else {
+                            echo( "version number to install is ${upstreamDependency.versionNumber}")
+                        }
+
+}
+
 node {
 
     def BUILD_NUMBER=env.BUILD_NUMBER
@@ -81,19 +139,18 @@ node {
                 printf rmsg
                 
                 def jsonSlurper = new JsonSlurperClassic()
-                def allPackageVersionsAvailable = jsonSlurper.parseText(rmsg)
+                def allPackageVersionsAvailable = jsonSlurper.parseText(rmsg).result
                 echo( "allPackageVersionsAvailable == ${allPackageVersionsAvailable}")
 
                 // loop through the SFDX_PROJECT.packageDirectories and then the packageDirectory.dependencies
                 for ( packageDirectory in SFDX_PROJECT.packageDirectories ) {
+                    echo("packageDirectory.dependencies == ${packageDirectory.dependencies}")
                     for ( upstreamDependency in packageDirectory.dependencies ) {
-                        echo( "upstreamDependency == ${upstreamDependency} -- installing to test org")
-                        if ( upstreamDependency.versionNumber.endsWith('LATEST') ) {
-                            echo( 'found a version number with latest' )
-                        }
-                        else {
-                            echo( "version number to install is ${upstreamDependency.versionNumber}")
-                        }
+                        echo( "upstreamDependency == ${upstreamDependency} -- should be installed to test org")
+
+                        //resolvePackageVersionId
+
+
                         
                     }
                 }
