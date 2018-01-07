@@ -83,8 +83,26 @@ node {
                 def jsonSlurper = new JsonSlurperClassic()
                 def allPackageVersionsAvailable = jsonSlurper.parseText(rmsg)
                 echo( "allPackageVersionsAvailable == ${allPackageVersionsAvailable}")
+
+                // loop through the SFDX_PROJECT.packageDirectories and then the packageDirectory.dependencies
+                for ( packageDirectory in SFDX_PROJECT.packageDirectories ) {
+                    for ( upstreamDependency in packageDirectory.dependencies ) {
+                        echo( "upstreamDependency == ${upstreamDependency} -- installing to test org")
+                        if ( upstreamDependency.versionNumber.endsWith('LATEST') ) {
+                            echo( 'found a version number with latest' )
+                        }
+                        else {
+                            echo( "version number to install is ${upstreamDependency.versionNumber}")
+                        }
+                        
+                    }
+                }
+
+                // if the upstreamDependency.versionNumber contains the word "LATEST", then use the latest version for that <major>.<minor>.<patch> 
+                // else use the version that matches the <major>.<minor>.<patch> 
+
             } else {
-                echo( "upstream dependencies found for this project" )
+                echo( "no upstream dependencies found for this project" )
             }
             
 
