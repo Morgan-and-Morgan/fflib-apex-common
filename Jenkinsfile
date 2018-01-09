@@ -6,6 +6,7 @@ def jsonParse(def json) {
     new groovy.json.JsonSlurperClassic().parseText(json)
 }
 
+@NonCPS
 def resolvePackageVersionId( def allPackageVersionsAvailable, def upstreamDependency ) {
     /* 
     allPackageVersionsAvailable == 
@@ -55,23 +56,37 @@ def resolvePackageVersionId( def allPackageVersionsAvailable, def upstreamDepend
     */
     def result
     def workingSubscriberPackageVersionId
-    def workingPackageVersionsAvailableBuildNumber
+    def workingPackageVersionsAvailableBuildNumber = 0
     def workingVersionNumber
 
     for ( packageVersionsAvailable  in allPackageVersionsAvailable ) {
-        echo( "packageVersionsAvailable.Version == ${packageVersionsAvailable.Version}" )
-        echo( "upstreamDependency.versionNumber == ${upstreamDependency.versionNumber}" )
+
         if ( upstreamDependency.packageId == packageVersionsAvailable.Package2Id ) {
             // this is the right package.  
             // is it the right version?
             if ( upstreamDependency.versionNumber.endsWith('LATEST') ) {
-                def upstreamDependencyVerNumSplit = upstreamDependency.versionNumber.split('.')
-                if ( packageVersionsAvailable.MajorVersion == upstreamDependencyVerNumSplit[0]
-                    && packageVersionsAvailable.MinorVersion == upstreamDependencyVerNumSplit[1]
-                    && packageVersionsAvailable.PatchVersion == upstreamDependencyVerNumSplit[2]
-                    && packageVersionsAvailable.BuildNumber.toInteger() < workingPackageVersionsAvailableBuildNumber.toInteger()
+
+                def upstreamDependencyVerNumSplit = upstreamDependency.versionNumber.split("\\.") // need to escape the dot to get a literal period
+
+                echo( "packageVersionsAvailable.Version == ${packageVersionsAvailable.Version}" )
+                echo( "upstreamDependency.versionNumber == ${upstreamDependency.versionNumber}" )
+                echo( "packageVersionsAvailable.MajorVersion == ${packageVersionsAvailable.MajorVersion}" )
+                echo( "upstreamDependencyVerNumSplit[0] == ${upstreamDependencyVerNumSplit[0]}")
+                echo( "packageVersionsAvailable.MinorVersion == ${packageVersionsAvailable.MinorVersion}" )
+                echo( "upstreamDependencyVerNumSplit[1] == ${upstreamDependencyVerNumSplit[1]}")
+                echo( "packageVersionsAvailable.PatchVersion == ${packageVersionsAvailable.PatchVersion}" )
+                echo( "upstreamDependencyVerNumSplit[2] == ${upstreamDependencyVerNumSplit[2]}")
+                echo( "workingPackageVersionsAvailableBuildNumber == ${workingPackageVersionsAvailableBuildNumber}")
+                echo( "packageVersionsAvailable.BuildNumber == ${packageVersionsAvailable.BuildNumber}")
+
+                if ( packageVersionsAvailable.MajorVersion == upstreamDependencyVerNumSplit[0].toInteger()
+                    && packageVersionsAvailable.MinorVersion == upstreamDependencyVerNumSplit[1].toInteger()
+                    && packageVersionsAvailable.PatchVersion == upstreamDependencyVerNumSplit[2].toInteger()
+                    && packageVersionsAvailable.BuildNumber > workingPackageVersionsAvailableBuildNumber
                     ) 
                 {
+                    echo( 'point 2A' )
+
                     // this packageVersionsAvailable is a later build than the working version.  
                     //  Make this packageVersionsAvailable now the working
                     workingPackageVersionsAvailableBuildNumber = packageVersionsAvailable.BuildNumber
@@ -96,6 +111,7 @@ def resolvePackageVersionId( def allPackageVersionsAvailable, def upstreamDepend
     echo ("result = ${result}")
 
     // the last line works as the return value
+    return result
 }
 
 node {
@@ -176,6 +192,7 @@ node {
                 def jsonSlurper = new JsonSlurperClassic()
                 def allPackageVersionsAvailable = jsonSlurper.parseText(rmsg).result
                 echo( "allPackageVersionsAvailable == ${allPackageVersionsAvailable}")
+                jsonSlurper = null 
 
                 def versionIdToInstall
 
@@ -187,23 +204,42 @@ node {
 
                         versionIdToInstall = resolvePackageVersionId( allPackageVersionsAvailable, upstreamDependency )
 
+                        echo("versionIdToInstall == ${versionIdToInstall}")
 
+                        if ( versionIdToInstall != null ) {
+                            echo ("installing version ${versionIdToInstall}")
+                            //rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:package:install -i ${versionIdToInstall}"
+                            //echo ("rc == ${rc}")
+                            //if (rc != 0) { error "installtion of package version ${versionIdToInstall} failed" }
+                            
+                            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install -i ${versionIdToInstall} --json --wait 3 "
+                            printf rmsg
+
+                            echo ("point 3A")
+                            echo ( rmsg )
+                            echo ("point 3B")
+//                            def installationRequest = jsonSlurper.parseText(rmsg).result
+//
+//                            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install:get -id ${versionIdToInstall} --json --wait 3 "
+//                            printf rmsg
+
+
+
+                        }
+                        else {
+                            echo ("No package version found to install for ")
+                        }
+                        
                         
                     }
                 }
 
-                // if the upstreamDependency.versionNumber contains the word "LATEST", then use the latest version for that <major>.<minor>.<patch> 
-                // else use the version that matches the <major>.<minor>.<patch> 
-
             } else {
                 echo( "no upstream dependencies found for this project" )
             }
-            
 
-                    //rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:auth:jwt:grant --clientid ${CONNECTED_APP_CONSUMER_KEY} --username ${HUB_ORG} --jwtkeyfile ${jwt_key_file} --setdefaultdevhubusername --instanceurl ${SFDC_HOST}"
-                    //rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:package:install -i 04t1J0000004UBgQAM --targetusername 
-                    //if (rc != 0) { error 'hub org authorization failed' }
-
+            allPackageVersionsAvailable = null 
+//            jsonSlurper = null 
         }
 
         stage('Compile') {
