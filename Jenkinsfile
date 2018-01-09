@@ -6,62 +6,96 @@ def jsonParse(def json) {
     new groovy.json.JsonSlurperClassic().parseText(json)
 }
 
-def resolvePackageVersionId( def allPackageVersionsAvailable, def package2Id, def versionNumber ) {
+def resolvePackageVersionId( def allPackageVersionsAvailable, def upstreamDependency ) {
     /* 
     allPackageVersionsAvailable == 
     [
-        result:
         [
-            [
-                Package2Id:0Ho1J0000000006SAA, 
-                Branch:null, 
-                MajorVersion:0, 
-                MinorVersion:1, 
-                PatchVersion:0, 
-                BuildNumber:1, 
-                Version:0.1.0.1, 
-                Tag:null, 
-                SubscriberPackageVersionId:04t1J0000004UCKQA2, 
-                CreatedDate:2017-12-09 19:05, 
-                Id:05i1J0000000006QAA, 
-                NamespacePrefix:null, 
-                IsBeta:true
-            ]
-        ,   [
-                Package2Id:0Ho1J0000000006SAA, 
-                Branch:null, 
-                MajorVersion:0, 
-                MinorVersion:1, 
-                PatchVersion:0, 
-                BuildNumber:2, 
-                Version:0.1.0.2, 
-                Tag:null, 
-                LastModifiedDate:2017-12-09 19:30, 
-                Description:ver 0.1 with no ancestor with no namespace, 
-                Released:false, 
-                Package2Name:mm_fflib_apex_mocks, 
-                Name:v0.1 trial, 
-                SubscriberPackageVersionId:04t1J0000004UCPQA2, 
-                CreatedDate:2017-12-09 19:30, 
-                Id:05i1J000000000BQAQ, 
-                NamespacePrefix:null, 
-                IsBeta:true
-            ]
+            Package2Id:0Ho1J0000000006SAA, 
+            Branch:null, 
+            MajorVersion:0, 
+            MinorVersion:1, 
+            PatchVersion:0, 
+            BuildNumber:1, 
+            Version:0.1.0.1, 
+            Tag:null, 
+            SubscriberPackageVersionId:04t1J0000004UCKQA2, 
+            CreatedDate:2017-12-09 19:05, 
+            Id:05i1J0000000006QAA, 
+            NamespacePrefix:null, 
+            IsBeta:true
+        ],
+        [
+            Package2Id:0Ho1J0000000006SAA, 
+            Branch:null, 
+            MajorVersion:0, 
+            MinorVersion:1, 
+            PatchVersion:0, 
+            BuildNumber:2, 
+            Version:0.1.0.2, 
+            Tag:null, 
+            LastModifiedDate:2017-12-09 19:30, 
+            Description:ver 0.1 with no ancestor with no namespace, 
+            Released:false, 
+            Package2Name:mm_fflib_apex_mocks, 
+            Name:v0.1 trial, 
+            SubscriberPackageVersionId:04t1J0000004UCPQA2, 
+            CreatedDate:2017-12-09 19:30, 
+            Id:05i1J000000000BQAQ, 
+            NamespacePrefix:null, 
+            IsBeta:true
         ]
-        , status:0
+    ]
+
+    upstreamDependency = 
+    [
+        packageId:0Ho1J0000000006SAA, 
+        versionNumber:0.1.0.LATEST
     ]
     */
+    def result
+    def workingSubscriberPackageVersionId
+    def workingPackageVersionsAvailableBuildNumber
+    def workingVersionNumber
 
-                        if ( upstreamDependency.versionNumber.endsWith('LATEST') ) {
-                            echo( 'found a version number with latest' )
-                            // need to match the package id and version number to return the package version id.
-                            // need a function with two inputs
+    for ( packageVersionsAvailable  in allPackageVersionsAvailable ) {
+        echo( "packageVersionsAvailable.Version == ${packageVersionsAvailable.Version}" )
+        echo( "upstreamDependency.versionNumber == ${upstreamDependency.versionNumber}" )
+        if ( upstreamDependency.packageId == packageVersionsAvailable.Package2Id ) {
+            // this is the right package.  
+            // is it the right version?
+            if ( upstreamDependency.versionNumber.endsWith('LATEST') ) {
+                def upstreamDependencyVerNumSplit = upstreamDependency.versionNumber.split('.')
+                if ( packageVersionsAvailable.MajorVersion == upstreamDependencyVerNumSplit[0]
+                    && packageVersionsAvailable.MinorVersion == upstreamDependencyVerNumSplit[1]
+                    && packageVersionsAvailable.PatchVersion == upstreamDependencyVerNumSplit[2]
+                    && packageVersionsAvailable.BuildNumber.toInteger() < workingPackageVersionsAvailableBuildNumber.toInteger()
+                    ) 
+                {
+                    // this packageVersionsAvailable is a later build than the working version.  
+                    //  Make this packageVersionsAvailable now the working
+                    workingPackageVersionsAvailableBuildNumber = packageVersionsAvailable.BuildNumber
+                    workingSubscriberPackageVersionId = packageVersionsAvailable.SubscriberPackageVersionId
+                    workingVersionNumber = packageVersionsAvailable.Version
+                }
+            }
+            // Look for an exact match
+            else if ( upstreamDependency.versionNumber == packageVersionsAvailable.Version ) {
+                echo( "version number to install is ${upstreamDependency.versionNumber}")
+                result = packageVersionsAvailable.SubscriberPackageVersionId
+                workingSubscriberPackageVersionId = null
+                workingVersionNumber = null
+                break
+            }
+        }
+    } 
+    echo ("workingSubscriberPackageVersionId out of loop = ${workingSubscriberPackageVersionId}")
+    if ( workingSubscriberPackageVersionId != null ) {
+        result = workingSubscriberPackageVersionId
+    }
+    echo ("result = ${result}")
 
-                        }
-                        else {
-                            echo( "version number to install is ${upstreamDependency.versionNumber}")
-                        }
-
+    // the last line works as the return value
 }
 
 node {
@@ -142,13 +176,15 @@ node {
                 def allPackageVersionsAvailable = jsonSlurper.parseText(rmsg).result
                 echo( "allPackageVersionsAvailable == ${allPackageVersionsAvailable}")
 
+                def versionIdToInstall
+
                 // loop through the SFDX_PROJECT.packageDirectories and then the packageDirectory.dependencies
                 for ( packageDirectory in SFDX_PROJECT.packageDirectories ) {
                     echo("packageDirectory.dependencies == ${packageDirectory.dependencies}")
                     for ( upstreamDependency in packageDirectory.dependencies ) {
                         echo( "upstreamDependency == ${upstreamDependency} -- should be installed to test org")
 
-                        //resolvePackageVersionId
+                        versionIdToInstall = resolvePackageVersionId( allPackageVersionsAvailable, upstreamDependency )
 
 
                         
