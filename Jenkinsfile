@@ -212,7 +212,7 @@ node {
                             //echo ("rc == ${rc}")
                             //if (rc != 0) { error "installtion of package version ${versionIdToInstall} failed" }
                             
-                            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install -i ${versionIdToInstall} --json --wait 3 "
+                            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install --id ${versionIdToInstall} --json --wait 3 "
                             printf rmsg
 
                             echo ("point 3A")
@@ -279,14 +279,14 @@ node {
 
         stage('Clean') {
             echo('Deleting scratch org')
-            rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:auth:jwt:grant --clientid ${CONNECTED_APP_CONSUMER_KEY} --username ${HUB_ORG} --jwtkeyfile ${jwt_key_file} --setdefaultdevhubusername --instanceurl ${SFDC_HOST}"
+            rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:org:delete --targetusername ${SFDC_USERNAME}"
             if (rc != 0) { 
                 error "deletion of scratch org ${HUB_ORG} failed"
             }
         }
 
         stage('Post Build Notifications') {
-            slackSend channel: '#sf-ci-alerts', failOnError: true, message: 'started ${env.JOB_NAME} ${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>)', tokenCredentialId: 'Slack-Integration-Token-SF-CI-ALERTS'
+            slackSend channel: '#sf-ci-alerts', failOnError: true, message: "started ${env.JOB_NAME} ${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>)", tokenCredentialId: 'Slack-Integration-Token-SF-CI-ALERTS'
         }
     }
 }
