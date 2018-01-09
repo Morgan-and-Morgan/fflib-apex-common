@@ -145,12 +145,13 @@ node {
             if (robj.status != 0) { error 'org creation failed: ' + robj.message }
             SFDC_USERNAME=robj.result.username
             robj = null
+            jsonSlurper = null 
 
             // process the sfdx-project.json file for later user
             echo('Deserialize the sfdx-project.json ')
-            //def sfdxProjectFileContents = readJSON(file: 'sfdx-project.json')
+            
             def sfdxProjectFileContents = jsonParse( readFile('sfdx-project.json') )
-            //echo("sfdxProjectFileContents == ${sfdxProjectFileContents}")
+            
             SFDX_PROJECT = sfdxProjectFileContents
         }
 
