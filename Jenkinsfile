@@ -8,52 +8,7 @@ def jsonParse(def json) {
 
 @NonCPS
 def resolvePackageVersionId( def allPackageVersionsAvailable, def upstreamDependency ) {
-    /* 
-    allPackageVersionsAvailable == 
-    [
-        [
-            Package2Id:0Ho1J0000000006SAA, 
-            Branch:null, 
-            MajorVersion:0, 
-            MinorVersion:1, 
-            PatchVersion:0, 
-            BuildNumber:1, 
-            Version:0.1.0.1, 
-            Tag:null, 
-            SubscriberPackageVersionId:04t1J0000004UCKQA2, 
-            CreatedDate:2017-12-09 19:05, 
-            Id:05i1J0000000006QAA, 
-            NamespacePrefix:null, 
-            IsBeta:true
-        ],
-        [
-            Package2Id:0Ho1J0000000006SAA, 
-            Branch:null, 
-            MajorVersion:0, 
-            MinorVersion:1, 
-            PatchVersion:0, 
-            BuildNumber:2, 
-            Version:0.1.0.2, 
-            Tag:null, 
-            LastModifiedDate:2017-12-09 19:30, 
-            Description:ver 0.1 with no ancestor with no namespace, 
-            Released:false, 
-            Package2Name:mm_fflib_apex_mocks, 
-            Name:v0.1 trial, 
-            SubscriberPackageVersionId:04t1J0000004UCPQA2, 
-            CreatedDate:2017-12-09 19:30, 
-            Id:05i1J000000000BQAQ, 
-            NamespacePrefix:null, 
-            IsBeta:true
-        ]
-    ]
 
-    upstreamDependency = 
-    [
-        packageId:0Ho1J0000000006SAA, 
-        versionNumber:0.1.0.LATEST
-    ]
-    */
     def result
     def workingSubscriberPackageVersionId
     def workingPackageVersionsAvailableBuildNumber = 0
@@ -277,16 +232,55 @@ node {
             }
         }
 
+        stage('prepare-package') {
+            // this is where the package version will be organized
+        }
+
+        stage('package') {
+            // this is where the package version will be created
+
+            def directoryToUseForPackageInstall 
+
+            // What is the default package and what is its directory?
+            for ( packageDirectory in SFDX_PROJECT.packageDirectories ) {
+                if ( packageDirectory.default ) {
+                    directoryToUseForPackageInstall = packageDirectory.path 
+                    break 
+                }
+            }
+
+            if ( directoryToUseForPackageInstall == null ) {
+                error 'unable to determine the package directory for package creation'
+            }
+
+            timeout(time: 180, unit: 'SECONDS') {
+                rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:create --directory ${directoryToUseForPackageInstall} --json"
+                printf rmsg
+
+                def packageVersionCreationResponse = jsonSlurper.parseText(rmsg)
+
+                echo( rmsg )
+
+//                if (rmsg != 0) {
+//                    error 'package version creation failed'
+//                }
+            }
+        }
+
+        stage('Install') {
+            // this will be where the fingerprints of the build are created and then stored in Jenkins
+        }
+
         stage('Clean') {
             echo('Deleting scratch org')
-            rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:org:delete --targetusername ${SFDC_USERNAME}"
+            rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:org:delete --targetusername ${SFDC_USERNAME} --noprompt"
             if (rc != 0) { 
                 error "deletion of scratch org ${HUB_ORG} failed"
             }
         }
 
         stage('Post Build Notifications') {
-            slackSend channel: '#sf-ci-alerts', failOnError: true, message: "started ${env.JOB_NAME} ${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>)", tokenCredentialId: 'Slack-Integration-Token-SF-CI-ALERTS'
+            slackSend channel: '#sf-ci-alerts', color: 'good', failOnError: true, message: "build completed ${env.JOB_NAME} ${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>)", tokenCredentialId: 'Slack-Integration-Token-SF-CI-ALERTS'
         }
     }
 }
