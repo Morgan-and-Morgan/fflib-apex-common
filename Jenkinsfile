@@ -63,7 +63,7 @@ def resolvePackageVersionId( def allPackageVersionsAvailable, def upstreamDepend
             else if ( upstreamDependency.versionNumber == packageVersionsAvailable.Version ) {
                 echo( "version number to install is ${upstreamDependency.versionNumber}")
 
-                recordPackageVersionFingerprint ( RUN_ARTIFACT_DIR, packageVersionsAvailable.Package2Id, packageVersionsAvailable.SubscriberPackageVersionId )
+                //recordPackageVersionFingerprint ( RUN_ARTIFACT_DIR, packageVersionsAvailable.Package2Id, packageVersionsAvailable.SubscriberPackageVersionId )
 
                 result = packageVersionsAvailable.SubscriberPackageVersionId
                 workingSubscriberPackageVersionId = null
@@ -74,7 +74,7 @@ def resolvePackageVersionId( def allPackageVersionsAvailable, def upstreamDepend
     } 
     echo ("workingSubscriberPackageVersionId out of loop = ${workingSubscriberPackageVersionId}")
     if ( workingSubscriberPackageVersionId != null ) {
-        recordPackageVersionFingerprint ( RUN_ARTIFACT_DIR, packageVersionsAvailable.Package2Id, workingSubscriberPackageVersionId )
+        //recordPackageVersionFingerprint ( RUN_ARTIFACT_DIR, packageVersionsAvailable.Package2Id, workingSubscriberPackageVersionId )
         result = workingSubscriberPackageVersionId
     }
     echo ("result = ${result}")
@@ -179,6 +179,9 @@ node {
 
                         if ( versionIdToInstall != null ) {
                             echo ("installing version ${versionIdToInstall}")
+
+                            recordPackageVersionFingerprint ( RUN_ARTIFACT_DIR, upstreamDependency.packageId, versionIdToInstall )
+
                             //rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:package:install -i ${versionIdToInstall}"
                             //echo ("rc == ${rc}")
                             //if (rc != 0) { error "installtion of package version ${versionIdToInstall} failed" }
