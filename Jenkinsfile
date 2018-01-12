@@ -7,6 +7,15 @@ def jsonParse(def json) {
 }
 
 @NonCPS
+def recordPackageVersionFingerprint( def artifactDirectory, def packageId, def packageVersionId ) {
+    def fileToFingerprint = "${artifactDirectory}/package2-${packageId}-version-${packageVersionId}.packageVersion"
+    echo("recording finger print for ${fileToFingerprint}")
+
+    writeFile file: fileToFingerprint, text: "package2-${packageId}-version-${packageVersionId}"
+    fingerprint fileToFingerprint
+}
+
+@NonCPS
 def resolvePackageVersionId( def allPackageVersionsAvailable, def upstreamDependency ) {
 
     def result
@@ -52,6 +61,9 @@ def resolvePackageVersionId( def allPackageVersionsAvailable, def upstreamDepend
             // Look for an exact match
             else if ( upstreamDependency.versionNumber == packageVersionsAvailable.Version ) {
                 echo( "version number to install is ${upstreamDependency.versionNumber}")
+
+                recordPackageVersionFingerprint ( RUN_ARTIFACT_DIR, packageVersionsAvailable.Package2Id, packageVersionsAvailable.SubscriberPackageVersionId )
+
                 result = packageVersionsAvailable.SubscriberPackageVersionId
                 workingSubscriberPackageVersionId = null
                 workingVersionNumber = null
@@ -61,6 +73,7 @@ def resolvePackageVersionId( def allPackageVersionsAvailable, def upstreamDepend
     } 
     echo ("workingSubscriberPackageVersionId out of loop = ${workingSubscriberPackageVersionId}")
     if ( workingSubscriberPackageVersionId != null ) {
+        recordPackageVersionFingerprint ( RUN_ARTIFACT_DIR, packageVersionsAvailable.Package2Id, workingSubscriberPackageVersionId )
         result = workingSubscriberPackageVersionId
     }
     echo ("result = ${result}")
@@ -75,6 +88,8 @@ node {
     def RUN_ARTIFACT_DIR="target/${BUILD_NUMBER}"
     def SFDC_USERNAME
     def SFDX_PROJECT
+    def SFDX_NEW_PACKAGE_ID
+    def SFDX_NEW_PACKAGE_VERSION_ID
 
     def HUB_ORG=env.HUB_ORG_DH
     def SFDC_HOST = env.SFDC_HOST_DH
@@ -241,10 +256,12 @@ node {
 
             def directoryToUseForPackageInstall 
 
+
             // What is the default package and what is its directory?
             for ( packageDirectory in SFDX_PROJECT.packageDirectories ) {
                 if ( packageDirectory.default ) {
                     directoryToUseForPackageInstall = packageDirectory.path 
+                    SFDX_NEW_PACKAGE_ID = packageDirectory.id 
                     break 
                 }
             }
@@ -253,22 +270,72 @@ node {
                 error 'unable to determine the package directory for package creation'
             }
 
-            timeout(time: 180, unit: 'SECONDS') {
-                rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:create --directory ${directoryToUseForPackageInstall} --json"
-                printf rmsg
+            //rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:create --directory ${directoryToUseForPackageInstall} --json --wait 2"
+            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:create --directory ${directoryToUseForPackageInstall} --json"
+            printf rmsg
 
-                def packageVersionCreationResponse = jsonSlurper.parseText(rmsg)
+            def packageVersionCreationResponse = jsonParse(rmsg)
 
-                echo( rmsg )
+            echo ("packageVersionCreationResponse == ${packageVersionCreationResponse}")
 
-//                if (rmsg != 0) {
-//                    error 'package version creation failed'
-//                }
+            if ( packageVersionCreationResponse.status == 0 ) {
+
+                if( packageVersionCreationResponse.result.Status == 'InProgress' 
+                    || packageVersionCreationResponse.result.Status == 'Queued') {
+                    // The package version creation is still underway
+
+                    timeout(15) {
+                        waitUntil {
+                            script {
+                                // use the packageVersionCreationResponse.result.Id for this command verses SFDX_NEW_PACKAGE_VERSION_ID because we are yet
+                                //  certain that the package was created correctly
+                                rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:create:get --package2createrequestid ${packageVersionCreationResponse.result.Id} --json"
+                                printf rmsg
+
+                                def jsonSlurper2 = new JsonSlurperClassic()
+                
+                                //def packageVersionCreationCheckResponse = jsonParse(rmsg) 
+                                def packageVersionCreationCheckResponse = jsonSlurper2.parseText(rmsg)
+
+                                // The JSON "result" is currently an array.  That is a potential bug. Refer to Salesforce DX Success Community post for details https://success.salesforce.com/0D53A00003OTsAD
+                                def packageVersionCreationCheckResponseResult = jsonSlurper2.parseText(rmsg).result[0]
+                                
+                                echo ("packageVersionCreationCheckResponse == ${packageVersionCreationCheckResponse}")
+                                //echo ("packageVersionCreationCheckResponseResult == ${packageVersionCreationCheckResponseResult}")
+                                echo("marker 3A")
+                                echo (packageVersionCreationCheckResponseResult.Status)
+                                echo("marker 3A2")
+
+                                if ( packageVersionCreationCheckResponseResult.Status == "Success" ) {
+                                    SFDX_NEW_PACKAGE_VERSION_ID = packageVersionCreationCheckResponseResult.Id
+                                }
+
+                                echo("marker 3B")
+
+                                def isPackageVersionCreationCompleted = packageVersionCreationCheckResponse.status == 0 && packageVersionCreationCheckResponseResult.Status != "InProgress" && packageVersionCreationCheckResponseResult.Status != "Queued"
+                                echo( "isPackageVersionCreationCompleted == ${isPackageVersionCreationCompleted}")
+                                return isPackageVersionCreationCompleted
+                            }
+                        }
+                        echo("Exited the waitUntil phase")
+                    }
+                    echo("Exited the timeout phase")
+                }
+                else if( packageVersionCreationResponse.result.Status == 'Success' ) {
+                    SFDX_NEW_PACKAGE_VERSION_ID = packageVersionCreationResponse.result.Id
+                }
             }
+            echo( "SFDX_NEW_PACKAGE_VERSION_ID == ${SFDX_NEW_PACKAGE_VERSION_ID}")
         }
 
         stage('Install') {
             // this will be where the fingerprints of the build are created and then stored in Jenkins
+            if ( SFDX_NEW_PACKAGE_VERSION_ID != null ) {
+                // then a package was created.  Record its finger prints
+                recordPackageVersionFingerprint( RUN_ARTIFACT_DIR, SFDX_NEW_PACKAGE_ID, SFDX_NEW_PACKAGE_VERSION_ID )
+            }
+
+
         }
 
         stage('Clean') {
