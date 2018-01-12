@@ -12,7 +12,8 @@ def recordPackageVersionFingerprint( def artifactDirectory, def packageId, def p
     echo("recording finger print for ${fileToFingerprint}")
 
     writeFile file: fileToFingerprint, text: "package2-${packageId}-version-${packageVersionId}"
-    fingerprint fileToFingerprint
+    //fingerprint fileToFingerprint
+    archiveArtifacts allowEmptyArchive: true, artifacts: fileToFingerprint, fingerprint: true
 }
 
 @NonCPS
