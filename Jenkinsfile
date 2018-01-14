@@ -348,6 +348,8 @@ node {
             if (rc != 0) { 
                 error "deletion of scratch org ${HUB_ORG} failed"
             }
+
+            cleanWs cleanWhenAborted: false, cleanWhenFailure: false, cleanWhenNotBuilt: false, cleanWhenUnstable: false, notFailBuild: true
         }
 
         stage('Post Build Notifications') {
