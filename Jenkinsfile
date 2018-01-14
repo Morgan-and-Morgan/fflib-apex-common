@@ -9,10 +9,10 @@ def jsonParse(def json) {
 @NonCPS
 def recordPackageVersionFingerprint( def artifactDirectory, def packageId, def packageVersionId ) {
     def fileToFingerprint = "${artifactDirectory}/package2-${packageId}-version-${packageVersionId}.packageVersion"
-    echo("recording finger print for ${fileToFingerprint}")
+    echo("recording fingerprint for ${fileToFingerprint}")
 
     writeFile file: fileToFingerprint, text: "package2-${packageId}-version-${packageVersionId}"
-    //fingerprint fileToFingerprint
+    //fingerprint fileToFingerprint`
     archiveArtifacts allowEmptyArchive: true, artifacts: "${fileToFingerprint}", fingerprint: true
 }
 
