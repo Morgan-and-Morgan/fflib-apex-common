@@ -7,75 +7,67 @@ def jsonParse(def json) {
 }
 
 @NonCPS
-def recordPackageVersionFingerprint( def artifactDirectory, def packageId, def packageVersionId ) {
-    def fileToFingerprint = "${artifactDirectory}/package2-${packageId}-version-${packageVersionId}.packageVersion"
-    echo("recording fingerprint for ${fileToFingerprint}")
+def recordPackageVersionArtifact( def artifactDirectory, def packageVersion ) {
+    def fileToFingerprint = "${artifactDirectory}/package2-${packageVersion.Package2Id}-version-${packageVersion.MajorVersion}.${packageVersion.MinorVersion}.${packageVersion.PatchVersion}.${packageVersion.BuildNumber}-branch-${packageVersion.Branch}-${packageVersion.SubscriberPackageVersionId}.packageVersion"
+    echo("creating package version artifact for ${fileToFingerprint}")
 
-    writeFile file: fileToFingerprint, text: "package2-${packageId}-version-${packageVersionId}"
-    //fingerprint fileToFingerprint`
-    archiveArtifacts allowEmptyArchive: true, artifacts: "${fileToFingerprint}", fingerprint: true
+    writeFile file: fileToFingerprint, text: "${packageVersion}"
 }
 
 @NonCPS
-def resolvePackageVersionId( def allPackageVersionsAvailable, def upstreamDependency ) {
+def resolvePackageVersion( def allPackageVersionsAvailable, def upstreamDependency ) {
 
     def result
-    def workingSubscriberPackageVersionId
+    def workingPackageVersion
     def workingPackageVersionsAvailableBuildNumber = 0
-    def workingVersionNumber
 
-    for ( packageVersionsAvailable  in allPackageVersionsAvailable ) {
+    for ( packageVersionAvailable  in allPackageVersionsAvailable ) {
 
-        if ( upstreamDependency.packageId == packageVersionsAvailable.Package2Id ) {
+        if ( upstreamDependency.packageId == packageVersionAvailable.Package2Id ) {
             // this is the right package.  
             // is it the right version?
             if ( upstreamDependency.versionNumber.endsWith('LATEST') ) {
 
                 def upstreamDependencyVerNumSplit = upstreamDependency.versionNumber.split("\\.") // need to escape the dot to get a literal period
 
-                echo( "packageVersionsAvailable.Version == ${packageVersionsAvailable.Version}" )
+                echo( "packageVersionAvailable.Version == ${packageVersionAvailable.Version}" )
                 echo( "upstreamDependency.versionNumber == ${upstreamDependency.versionNumber}" )
-                echo( "packageVersionsAvailable.MajorVersion == ${packageVersionsAvailable.MajorVersion}" )
+                echo( "packageVersionAvailable.MajorVersion == ${packageVersionAvailable.MajorVersion}" )
                 echo( "upstreamDependencyVerNumSplit[0] == ${upstreamDependencyVerNumSplit[0]}")
-                echo( "packageVersionsAvailable.MinorVersion == ${packageVersionsAvailable.MinorVersion}" )
+                echo( "packageVersionAvailable.MinorVersion == ${packageVersionAvailable.MinorVersion}" )
                 echo( "upstreamDependencyVerNumSplit[1] == ${upstreamDependencyVerNumSplit[1]}")
-                echo( "packageVersionsAvailable.PatchVersion == ${packageVersionsAvailable.PatchVersion}" )
+                echo( "packageVersionAvailable.PatchVersion == ${packageVersionAvailable.PatchVersion}" )
                 echo( "upstreamDependencyVerNumSplit[2] == ${upstreamDependencyVerNumSplit[2]}")
                 echo( "workingPackageVersionsAvailableBuildNumber == ${workingPackageVersionsAvailableBuildNumber}")
-                echo( "packageVersionsAvailable.BuildNumber == ${packageVersionsAvailable.BuildNumber}")
+                echo( "packageVersionAvailable.BuildNumber == ${packageVersionAvailable.BuildNumber}")
 
-                if ( packageVersionsAvailable.MajorVersion == upstreamDependencyVerNumSplit[0].toInteger()
-                    && packageVersionsAvailable.MinorVersion == upstreamDependencyVerNumSplit[1].toInteger()
-                    && packageVersionsAvailable.PatchVersion == upstreamDependencyVerNumSplit[2].toInteger()
-                    && packageVersionsAvailable.BuildNumber > workingPackageVersionsAvailableBuildNumber
+                if ( packageVersionAvailable.MajorVersion == upstreamDependencyVerNumSplit[0].toInteger()
+                    && packageVersionAvailable.MinorVersion == upstreamDependencyVerNumSplit[1].toInteger()
+                    && packageVersionAvailable.PatchVersion == upstreamDependencyVerNumSplit[2].toInteger()
+                    && packageVersionAvailable.BuildNumber > workingPackageVersionsAvailableBuildNumber
                     ) 
                 {
                     echo( 'point 2A' )
 
-                    // this packageVersionsAvailable is a later build than the working version.  
-                    //  Make this packageVersionsAvailable now the working
-                    workingPackageVersionsAvailableBuildNumber = packageVersionsAvailable.BuildNumber
-                    workingSubscriberPackageVersionId = packageVersionsAvailable.SubscriberPackageVersionId
-                    workingVersionNumber = packageVersionsAvailable.Version
+                    // this packageVersionAvailable is a later build than the working version.  
+                    //  Make this packageVersionAvailable now the working
+                    workingPackageVersionsAvailableBuildNumber = packageVersionAvailable.BuildNumber
+                    workingPackageVersion = packageVersionAvailable
                 }
             }
             // Look for an exact match
-            else if ( upstreamDependency.versionNumber == packageVersionsAvailable.Version ) {
+            else if ( upstreamDependency.versionNumber == packageVersionAvailable.Version ) {
                 echo( "version number to install is ${upstreamDependency.versionNumber}")
 
-                //recordPackageVersionFingerprint ( RUN_ARTIFACT_DIR, packageVersionsAvailable.Package2Id, packageVersionsAvailable.SubscriberPackageVersionId )
-
-                result = packageVersionsAvailable.SubscriberPackageVersionId
-                workingSubscriberPackageVersionId = null
-                workingVersionNumber = null
+                result = packageVersionAvailable
+                workingPackageVersion = null
                 break
             }
         }
     } 
-    echo ("workingSubscriberPackageVersionId out of loop = ${workingSubscriberPackageVersionId}")
-    if ( workingSubscriberPackageVersionId != null ) {
-        //recordPackageVersionFingerprint ( RUN_ARTIFACT_DIR, packageVersionsAvailable.Package2Id, workingSubscriberPackageVersionId )
-        result = workingSubscriberPackageVersionId
+    echo ("workingPackageVersion out of loop = ${workingPackageVersion}")
+    if ( workingPackageVersion != null ) {
+        result = workingPackageVersion
     }
     echo ("result = ${result}")
 
@@ -97,7 +89,6 @@ node {
     def JWT_KEY_CRED_ID = env.JWT_CRED_ID_DH
     def CONNECTED_APP_CONSUMER_KEY=env.CONNECTED_APP_CONSUMER_KEY_DH
 
-    //def toolbelt = tool 'toolbelt'
     def toolbelt = tool 'sfdx-cli-toolbelt'
 
     stage('Checkout Source') {
@@ -144,28 +135,27 @@ node {
 
         stage('Process Resources') {
             // if the project has upstring dependencies, install those to the scratch org first
-            def packageVersionIdArray = []
+            def package2IdArray = []
             for ( packageDirectory in SFDX_PROJECT.packageDirectories ) {
 
                 echo( "packageDirectory ==  ${packageDirectory}" )
                 
                 for ( upstreamDependency in packageDirectory.dependencies ) {
                     echo( "upstreamDependency == ${upstreamDependency} -- installing to test org")
-                    packageVersionIdArray.add( upstreamDependency.packageId )
+                    package2IdArray.add( upstreamDependency.packageId )
                 }
             }
 
-            if ( ! packageVersionIdArray.isEmpty() ) {
+            if ( ! package2IdArray.isEmpty() ) {
+
+                //def allPackageVersionsAvailable = findAllPackageVersionsAvailableByPackageId( package2IdArray.join(','), toolbelt )
                 echo("finding all package versions for package ids found")
-                rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:list --package2ids ${packageVersionIdArray.join(',')} --json "
+                rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:list --package2ids ${package2IdArray.join(',')} --json "
                 printf rmsg
                 
-                def jsonSlurper = new JsonSlurperClassic()
-                def allPackageVersionsAvailable = jsonSlurper.parseText(rmsg).result
-                echo( "allPackageVersionsAvailable == ${allPackageVersionsAvailable}")
-                jsonSlurper = null 
+                def allPackageVersionsAvailable = jsonParse(rmsg).result
 
-                def versionIdToInstall
+                def packageVersion
 
                 // loop through the SFDX_PROJECT.packageDirectories and then the packageDirectory.dependencies
                 for ( packageDirectory in SFDX_PROJECT.packageDirectories ) {
@@ -173,25 +163,24 @@ node {
                     for ( upstreamDependency in packageDirectory.dependencies ) {
                         echo( "upstreamDependency == ${upstreamDependency} -- should be installed to test org")
 
-                        versionIdToInstall = resolvePackageVersionId( allPackageVersionsAvailable, upstreamDependency )
+                        //versionIdToInstall = resolvePackageVersionId( allPackageVersionsAvailable, upstreamDependency )
+                        packageVersion = resolvePackageVersion( allPackageVersionsAvailable, upstreamDependency )
 
-                        echo("versionIdToInstall == ${versionIdToInstall}")
+                        //echo("versionIdToInstall == ${versionIdToInstall}")
+                        echo("packageVersion == ${packageVersion}")
 
-                        if ( versionIdToInstall != null ) {
-                            echo ("installing version ${versionIdToInstall}")
+                        //if ( versionIdToInstall != null ) {
+                        if ( packageVersion != null ) {
+                            //echo ("installing version ${versionIdToInstall}")
+                            echo("installing version ${packageVersion.Version}")
 
-                            recordPackageVersionFingerprint ( RUN_ARTIFACT_DIR, upstreamDependency.packageId, versionIdToInstall )
+                            recordPackageVersionArtifact ( RUN_ARTIFACT_DIR, packageVersion )
 
-                            //rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:package:install -i ${versionIdToInstall}"
-                            //echo ("rc == ${rc}")
-                            //if (rc != 0) { error "installtion of package version ${versionIdToInstall} failed" }
+                            //rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install --id ${versionIdToInstall} --json --wait 3 "
+                            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install --id ${packageVersion.SubscriberPackageVersionId} --json --wait 3 "
                             
-                            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install --id ${versionIdToInstall} --json --wait 3 "
                             printf rmsg
-
-                            echo ("point 3A")
-                            echo ( rmsg )
-                            echo ("point 3B")
+//TODO : Need to setup the check to ensure that package version has been installed.
 //                            def installationRequest = jsonSlurper.parseText(rmsg).result
 //
 //                            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install:get -id ${versionIdToInstall} --json --wait 3 "
@@ -213,7 +202,6 @@ node {
             }
 
             allPackageVersionsAvailable = null 
-//            jsonSlurper = null 
         }
 
         stage('Compile') {
@@ -222,11 +210,6 @@ node {
             if (rc != 0) {
                 error 'push failed'
             }
-            // assign permset
-//            rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:user:permset:assign --targetusername ${SFDC_USERNAME} --permsetname DreamHouse"
-//            if (rc != 0) {
-//                error 'permset:assign failed'
-//            }
         }
 
         stage('Generate Test Sources') {
@@ -251,15 +234,10 @@ node {
             }
         }
 
-        stage('prepare-package') {
-            // this is where the package version will be organized
-        }
-
         stage('package') {
             // this is where the package version will be created
 
             def directoryToUseForPackageInstall 
-
 
             // What is the default package and what is its directory?
             for ( packageDirectory in SFDX_PROJECT.packageDirectories ) {
@@ -311,7 +289,7 @@ node {
                                 echo("marker 3A2")
 
                                 if ( packageVersionCreationCheckResponseResult.Status == "Success" ) {
-                                    SFDX_NEW_PACKAGE_VERSION_ID = packageVersionCreationCheckResponseResult.Id
+                                    SFDX_NEW_PACKAGE_VERSION_ID = packageVersionCreationCheckResponseResult.Package2VersionId
                                 }
 
                                 echo("marker 3B")
@@ -326,7 +304,8 @@ node {
                     echo("Exited the timeout phase")
                 }
                 else if( packageVersionCreationResponse.result.Status == 'Success' ) {
-                    SFDX_NEW_PACKAGE_VERSION_ID = packageVersionCreationResponse.result.Id
+                    echo("packageVersionCreationResponse == ${packageVersionCreationResponse}")
+                    SFDX_NEW_PACKAGE_VERSION_ID = packageVersionCreationResponse.result.Package2VersionId
                 }
             }
             echo( "SFDX_NEW_PACKAGE_VERSION_ID == ${SFDX_NEW_PACKAGE_VERSION_ID}")
@@ -336,9 +315,29 @@ node {
             // this will be where the fingerprints of the build are created and then stored in Jenkins
             if ( SFDX_NEW_PACKAGE_VERSION_ID != null ) {
                 // then a package was created.  Record its finger prints
-                recordPackageVersionFingerprint( RUN_ARTIFACT_DIR, SFDX_NEW_PACKAGE_ID, SFDX_NEW_PACKAGE_VERSION_ID )
-            }
+                //def allPackageVersionsAvailable = findAllPackageVersionsAvailableByPackageId( SFDX_NEW_PACKAGE_ID, toolbelt )
+                echo("finding all package versions for package ids found")
+                rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:list --package2ids ${SFDX_NEW_PACKAGE_ID} --json "
+                printf rmsg
+                
+                def allPackageVersionsAvailable = jsonParse(rmsg).result
 
+                // loop through all allPackageVersionsAvailable until you find the new one with the SFDX_NEW_PACKAGE_VERSION_ID
+                for ( packageVersionAvailable in allPackageVersionsAvailable ) {
+                    echo ("packageVersionAvailable == ${packageVersionAvailable}")
+                    echo ("SFDX_NEW_PACKAGE_ID == ${SFDX_NEW_PACKAGE_ID}")
+                    echo ("packageVersionAvailable.Package2Id == ${packageVersionAvailable.Package2Id}")
+                    echo ("SFDX_NEW_PACKAGE_VERSION_ID == ${SFDX_NEW_PACKAGE_VERSION_ID}")
+                    echo ("packageVersionAvailable.Id == ${packageVersionAvailable.id}")
+                    if ( SFDX_NEW_PACKAGE_ID == packageVersionAvailable.Package2Id && SFDX_NEW_PACKAGE_VERSION_ID == packageVersionAvailable.Id) {
+                        echo ("found a match")
+                        recordPackageVersionArtifact( RUN_ARTIFACT_DIR, packageVersionAvailable )
+                        break
+                    }
+                }
+            }
+            
+            fingerprint "${RUN_ARTIFACT_DIR}/*.packageVersion"
 
         }
 
@@ -349,7 +348,7 @@ node {
                 error "deletion of scratch org ${HUB_ORG} failed"
             }
 
-            cleanWs cleanWhenAborted: false, cleanWhenFailure: false, cleanWhenNotBuilt: false, cleanWhenUnstable: false, notFailBuild: true
+//            cleanWs cleanWhenAborted: false, cleanWhenFailure: false, cleanWhenNotBuilt: false, cleanWhenUnstable: false, notFailBuild: true
         }
 
         stage('Post Build Notifications') {
