@@ -75,6 +75,12 @@ def resolvePackageVersion( def allPackageVersionsAvailable, def upstreamDependen
     return result
 }
 
+def handleError( def errorMsg ) {
+    slackSend channel: '#sf-ci-alerts', color: 'danger', failOnError: true, message: "build failed ${env.JOB_NAME} ${env.BUILD_NUMBER} (<${env.BUILD_URL}|Open>) -- ${errorMsg}", tokenCredentialId: 'Slack-Integration-Token-SF-CI-ALERTS'
+    error "${errorMsg}"
+}
+
+
 node {
 
     def BUILD_NUMBER=env.BUILD_NUMBER
@@ -110,7 +116,7 @@ node {
             
             echo("Authenticate To Dev Hub...")
             rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:auth:jwt:grant --clientid ${CONNECTED_APP_CONSUMER_KEY} --username ${HUB_ORG} --jwtkeyfile ${jwt_key_file} --setdefaultdevhubusername --instanceurl ${SFDC_HOST}"
-            if (rc != 0) { error 'hub org authorization failed' }
+            if (rc != 0) { handleError('hub org authorization failed') }
 
             echo("Create Scratch Org...")
             rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:org:create --definitionfile config/project-scratch-def.json --json --setdefaultusername"
@@ -120,7 +126,7 @@ node {
             echo('Deserialize the force:org:create response')
             def jsonSlurper = new JsonSlurperClassic()
             def robj = jsonSlurper.parseText(rmsg)
-            if (robj.status != 0) { error 'org creation failed: ' + robj.message }
+            if (robj.status != 0) { handleError('org creation failed: ' + robj.message) }
             SFDC_USERNAME=robj.result.username
             robj = null
             jsonSlurper = null 
@@ -148,7 +154,6 @@ node {
 
             if ( ! package2IdArray.isEmpty() ) {
 
-                //def allPackageVersionsAvailable = findAllPackageVersionsAvailableByPackageId( package2IdArray.join(','), toolbelt )
                 echo("finding all package versions for package ids found")
                 rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:list --package2ids ${package2IdArray.join(',')} --json "
                 printf rmsg
@@ -160,6 +165,7 @@ node {
                 // loop through the SFDX_PROJECT.packageDirectories and then the packageDirectory.dependencies
                 for ( packageDirectory in SFDX_PROJECT.packageDirectories ) {
                     echo("packageDirectory.dependencies == ${packageDirectory.dependencies}")
+
                     for ( upstreamDependency in packageDirectory.dependencies ) {
                         echo( "upstreamDependency == ${upstreamDependency} -- should be installed to test org")
 
@@ -181,6 +187,7 @@ node {
                             
                             printf rmsg
 //TODO : Need to setup the check to ensure that package version has been installed.
+//                          handleError()
 //                            def installationRequest = jsonSlurper.parseText(rmsg).result
 //
 //                            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install:get -id ${versionIdToInstall} --json --wait 3 "
@@ -190,13 +197,10 @@ node {
 
                         }
                         else {
-                            echo ("No package version found to install for ")
+                            echo ("No package version found to install")
                         }
-                        
-                        
                     }
                 }
-
             } else {
                 echo( "no upstream dependencies found for this project" )
             }
@@ -206,9 +210,14 @@ node {
 
         stage('Compile') {
             echo("Push To Test Org And Compile")
-            rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:source:push --targetusername ${SFDC_USERNAME}"
-            if (rc != 0) {
-                error 'push failed'
+            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:source:push --targetusername ${SFDC_USERNAME} --json"
+            printf rmsg
+
+            def response = jsonParse( rmsg )
+
+            if (response.status != 0) {
+                echo(response)
+                handleError("push failed -- ${response.message}")
             }
         }
 
@@ -223,9 +232,12 @@ node {
             echo( 'Run All Local Apex Tests' )
             sh "mkdir -p ${RUN_ARTIFACT_DIR}"
             timeout(time: 120, unit: 'SECONDS') {
-                rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:apex:test:run --testlevel RunLocalTests --outputdir ${RUN_ARTIFACT_DIR} --resultformat tap --targetusername ${SFDC_USERNAME}"
-                if (rc != 0) {
-                    error 'apex test run failed'
+                //rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:apex:test:run --testlevel RunLocalTests --outputdir ${RUN_ARTIFACT_DIR} --resultformat tap --targetusername ${SFDC_USERNAME}"
+                rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:apex:test:run --testlevel RunLocalTests --outputdir ${RUN_ARTIFACT_DIR} --resultformat tap --targetusername ${SFDC_USERNAME} --json"
+                def response = jsonParse( rmsg )
+                if (response.status != 0) {
+                    echo(response)
+                    handleError("apex test run failed -- ${response.message}")
                 }
 
                 // Process all unit test reports
@@ -248,8 +260,12 @@ node {
                 }
             }
 
+            if ( SFDX_NEW_PACKAGE_ID == null ) {
+                handleError( "unable to determine SFDX_NEW_PACKAGE_ID in stage:package")
+            }
+
             if ( directoryToUseForPackageInstall == null ) {
-                error 'unable to determine the package directory for package creation'
+                handleError( "unable to determine the package directory for package creation in stage:package")
             }
 
             //rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:create --directory ${directoryToUseForPackageInstall} --json --wait 2"
@@ -259,6 +275,11 @@ node {
             def packageVersionCreationResponse = jsonParse(rmsg)
 
             echo ("packageVersionCreationResponse == ${packageVersionCreationResponse}")
+
+            if ( packageVersionCreationResponse.status != 0 ) {
+                echo( packageVersionCreationResponse )
+                handleError( "package version creation has failed -- ${packageVersionCreationResponse.message}")
+            }
 
             if ( packageVersionCreationResponse.status == 0 ) {
 
@@ -279,20 +300,21 @@ node {
                                 //def packageVersionCreationCheckResponse = jsonParse(rmsg) 
                                 def packageVersionCreationCheckResponse = jsonSlurper2.parseText(rmsg)
 
+                                echo ("packageVersionCreationCheckResponse == ${packageVersionCreationCheckResponse}")
+
+                                if ( packageVersionCreationCheckResponse.status != 0 ) {
+                                    handleError( "force:package2:version:create:get failed -- ${packageVersionCreationCheckResponse.message}")
+                                }
+
                                 // The JSON "result" is currently an array.  That is a potential bug. Refer to Salesforce DX Success Community post for details https://success.salesforce.com/0D53A00003OTsAD
                                 def packageVersionCreationCheckResponseResult = jsonSlurper2.parseText(rmsg).result[0]
                                 
-                                echo ("packageVersionCreationCheckResponse == ${packageVersionCreationCheckResponse}")
-                                //echo ("packageVersionCreationCheckResponseResult == ${packageVersionCreationCheckResponseResult}")
-                                echo("marker 3A")
-                                echo (packageVersionCreationCheckResponseResult.Status)
-                                echo("marker 3A2")
-
-                                if ( packageVersionCreationCheckResponseResult.Status == "Success" ) {
+                                if ( packageVersionCreationCheckResponseResult.Status == 'Error' ) {
+                                    handleError( "force:package2:version:create:get failed -- ${packageVersionCreationCheckResponseResult.message}")
+                                }
+                                else if ( packageVersionCreationCheckResponseResult.Status == "Success" ) {
                                     SFDX_NEW_PACKAGE_VERSION_ID = packageVersionCreationCheckResponseResult.Package2VersionId
                                 }
-
-                                echo("marker 3B")
 
                                 def isPackageVersionCreationCompleted = packageVersionCreationCheckResponse.status == 0 && packageVersionCreationCheckResponseResult.Status != "InProgress" && packageVersionCreationCheckResponseResult.Status != "Queued"
                                 echo( "isPackageVersionCreationCompleted == ${isPackageVersionCreationCompleted}")
@@ -319,8 +341,13 @@ node {
                 echo("finding all package versions for package ids found")
                 rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:list --package2ids ${SFDX_NEW_PACKAGE_ID} --json "
                 printf rmsg
+
+                def response = jsonParse( rmsg )
+//                if ( response. ) {
+//                }
                 
-                def allPackageVersionsAvailable = jsonParse(rmsg).result
+                //def allPackageVersionsAvailable = jsonParse(rmsg).result
+                def allPackageVersionsAvailable = response.result
 
                 // loop through all allPackageVersionsAvailable until you find the new one with the SFDX_NEW_PACKAGE_VERSION_ID
                 for ( packageVersionAvailable in allPackageVersionsAvailable ) {
