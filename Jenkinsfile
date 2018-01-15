@@ -184,10 +184,11 @@ node {
 
                             //rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install --id ${versionIdToInstall} --json --wait 3 "
                             rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install --id ${packageVersion.SubscriberPackageVersionId} --json --wait 3 "
-                            
+                            echo("mark pkg-install 1")
                             printf rmsg
-
+                            echo("mark pkg-install 2")
                             def response = jsonParse(rmsg)
+                            echo("package install response == ${response}")
 
                             if ( response.status == 1 && response.message.startsWith( 'The package version is not fully available' ) ) {
                                 echo( "waiting on the upstream package to complete creation")
@@ -203,9 +204,6 @@ node {
 //
 //                            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install:get -id ${versionIdToInstall} --json --wait 3 "
 //                            printf rmsg
-
-
-
                         }
                         else {
                             echo ("No package version found to install")
