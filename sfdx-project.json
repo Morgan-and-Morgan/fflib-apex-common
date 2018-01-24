@@ -3,7 +3,7 @@
   "sourceApiVersion": "41.0",
   "packageDirectories": [
     {
-      "path": "src",
+      "path": "sfdx-source/fflib",
       "default": true,
       "id": "0Ho1J000000000BSAQ",
       "versionName": "v0.1 trial",
