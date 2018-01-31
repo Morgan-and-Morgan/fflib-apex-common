@@ -1,6 +1,17 @@
 #!groovy
 import groovy.json.JsonSlurperClassic
 
+/*
+ * @version 0.2.20180131
+ *
+ *  Change log:
+ *  - incorporate the GIT commit tag into the package creation process
+ *  - Issue with package creation on branch forcing upstream packages to be on branch as well.   https://success.salesforce.com/0D53A00003P8qv3
+ * 
+ *  Backlog:
+ *  - Potential processing issue on Jenkins where source:push throws error
+ */
+
 @NonCPS
 def jsonParse(def json) {
     new groovy.json.JsonSlurperClassic().parseText(json)
@@ -21,7 +32,12 @@ def resolvePackageVersion( def allPackageVersionsAvailable, def upstreamDependen
     def workingPackageVersion
     def workingPackageVersionsAvailableBuildNumber = 0
 
-    for ( packageVersionAvailable  in allPackageVersionsAvailable ) {
+    for ( packageVersionAvailable in allPackageVersionsAvailable ) {
+
+        if ( upstreamDependency.subscriberPackageVersionId != null && upstreamDependency.subscriberPackageVersionId == packageVersionAvailable.SubscriberPackageVersionId) {
+            result = packageVersionAvailable
+            break
+        }
 
         if ( upstreamDependency.packageId == packageVersionAvailable.Package2Id ) {
             // this is the right package.  
@@ -141,77 +157,67 @@ node {
 
         stage('Process Resources') {
             // if the project has upstring dependencies, install those to the scratch org first
-            def package2IdArray = []
+
+            // Loop through the dependencies.  Find out which ones need to be resolved
+            // The order that the dependencies are listed in the SFDX_PROJECT.packageDirectories array
+            //  is important because that will be the order that they are installed in.  If one dependency
+            //  needs another one listed to be installed first, then place that dependency earlier in the list
+            //  of the SFDX_PROJECT.packageDirectories before the dependent artifact.
+
+            echo("finding all package versions available")
+            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:list  --json "
+            printf rmsg
+            
+            def allPackageVersionsAvailable = jsonParse(rmsg).result
+
+            def packageVersion
+
+            // loop through the SFDX_PROJECT.packageDirectories and then the packageDirectory.dependencies
             for ( packageDirectory in SFDX_PROJECT.packageDirectories ) {
+                echo("packageDirectory.dependencies == ${packageDirectory.dependencies}")
 
-                echo( "packageDirectory ==  ${packageDirectory}" )
-                
                 for ( upstreamDependency in packageDirectory.dependencies ) {
-                    echo( "upstreamDependency == ${upstreamDependency} -- installing to test org")
-                    package2IdArray.add( upstreamDependency.packageId )
-                }
-            }
+                    echo( "upstreamDependency == ${upstreamDependency} -- should be installed to test org")
 
-            if ( ! package2IdArray.isEmpty() ) {
+                    packageVersion = resolvePackageVersion( allPackageVersionsAvailable, upstreamDependency )
 
-                echo("finding all package versions for package ids found")
-                rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:list --package2ids ${package2IdArray.join(',')} --json "
-                printf rmsg
-                
-                def allPackageVersionsAvailable = jsonParse(rmsg).result
+                    //echo("versionIdToInstall == ${versionIdToInstall}")
+                    echo("packageVersion == ${packageVersion}")
 
-                def packageVersion
+                    //if ( versionIdToInstall != null ) {
+                    if ( packageVersion != null ) {
+                        //echo ("installing version ${versionIdToInstall}")
+                        echo("installing version ${packageVersion.Version}")
 
-                // loop through the SFDX_PROJECT.packageDirectories and then the packageDirectory.dependencies
-                for ( packageDirectory in SFDX_PROJECT.packageDirectories ) {
-                    echo("packageDirectory.dependencies == ${packageDirectory.dependencies}")
+                        recordPackageVersionArtifact ( RUN_ARTIFACT_DIR, packageVersion )
 
-                    for ( upstreamDependency in packageDirectory.dependencies ) {
-                        echo( "upstreamDependency == ${upstreamDependency} -- should be installed to test org")
+                        //rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install --id ${versionIdToInstall} --json --wait 3 "
+                        rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install --id ${packageVersion.SubscriberPackageVersionId} --json --wait 3 "
+                        echo("mark pkg-install 1")
+                        printf rmsg
+                        echo("mark pkg-install 2")
+                        def response = jsonParse(rmsg)
+                        echo("package install response == ${response}")
 
-                        //versionIdToInstall = resolvePackageVersionId( allPackageVersionsAvailable, upstreamDependency )
-                        packageVersion = resolvePackageVersion( allPackageVersionsAvailable, upstreamDependency )
-
-                        //echo("versionIdToInstall == ${versionIdToInstall}")
-                        echo("packageVersion == ${packageVersion}")
-
-                        //if ( versionIdToInstall != null ) {
-                        if ( packageVersion != null ) {
-                            //echo ("installing version ${versionIdToInstall}")
-                            echo("installing version ${packageVersion.Version}")
-
-                            recordPackageVersionArtifact ( RUN_ARTIFACT_DIR, packageVersion )
-
-                            //rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install --id ${versionIdToInstall} --json --wait 3 "
+                        if ( response.status == 1 && response.message.startsWith( 'The package version is not fully available' ) ) {
+                            echo( "waiting on the upstream package to complete creation")
+                            sleep time: 3, unit: 'MINUTES'
+                            // try the install again.
                             rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install --id ${packageVersion.SubscriberPackageVersionId} --json --wait 3 "
-                            echo("mark pkg-install 1")
-                            printf rmsg
-                            echo("mark pkg-install 2")
-                            def response = jsonParse(rmsg)
-                            echo("package install response == ${response}")
-
-                            if ( response.status == 1 && response.message.startsWith( 'The package version is not fully available' ) ) {
-                                echo( "waiting on the upstream package to complete creation")
-                                sleep time: 3, unit: 'MINUTES'
-                                // try the install again.
-                                rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install --id ${packageVersion.SubscriberPackageVersionId} --json --wait 3 "
-                                response = jsonParse(rmsg)
-                            }
-                            // 
+                            response = jsonParse(rmsg)
+                        }
+                        // 
 //TODO : Need to setup the check to ensure that package version has been installed.
 //                          handleError()
 //                            def installationRequest = jsonSlurper.parseText(rmsg).result
 //
 //                            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install:get -id ${versionIdToInstall} --json --wait 3 "
 //                            printf rmsg
-                        }
-                        else {
-                            echo ("No package version found to install")
-                        }
+                    }
+                    else {
+                        echo ("No package version found to install")
                     }
                 }
-            } else {
-                echo( "no upstream dependencies found for this project" )
             }
 
             allPackageVersionsAvailable = null 
@@ -277,8 +283,14 @@ node {
                 handleError( "unable to determine the package directory for package creation in stage:package")
             }
 
-            //rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:create --directory ${directoryToUseForPackageInstall} --json --wait 2"
-            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:create --directory ${directoryToUseForPackageInstall} --json"
+            def commandScriptString = "${toolbelt}/sfdx force:package2:version:create --directory ${directoryToUseForPackageInstall} --json --tag ${env.BUILD_TAG.replaceAll(' ','-')}"
+
+            if ( env.BRANCH_NAME != null ) {
+                commandScriptString = commandScriptString + " --branch ${env.BRANCH_NAME}"
+            }
+            echo ("commandScriptString == ${commandScriptString}")
+
+            rmsg = sh returnStdout: true, script: commandScriptString
             printf rmsg
 
             def packageVersionCreationResponse = jsonParse(rmsg)
@@ -315,7 +327,8 @@ node {
                                     handleError( "force:package2:version:create:get failed -- ${packageVersionCreationCheckResponse.message}")
                                 }
 
-                                // The JSON "result" is currently an array.  That is a potential bug. Refer to Salesforce DX Success Community post for details https://success.salesforce.com/0D53A00003OTsAD
+                                // The JSON "result" is currently an array.  That is a SFDX bug -- W-4621618
+                                // Refer to Salesforce DX Success Community post for details https://success.salesforce.com/0D53A00003OTsAD
                                 def packageVersionCreationCheckResponseResult = jsonSlurper2.parseText(rmsg).result[0]
                                 
                                 if ( packageVersionCreationCheckResponseResult.Status == 'Error' ) {
@@ -345,17 +358,14 @@ node {
         stage('Install') {
             // this will be where the fingerprints of the build are created and then stored in Jenkins
             if ( SFDX_NEW_PACKAGE_VERSION_ID != null ) {
+
                 // then a package was created.  Record its finger prints
-                //def allPackageVersionsAvailable = findAllPackageVersionsAvailableByPackageId( SFDX_NEW_PACKAGE_ID, toolbelt )
                 echo("finding all package versions for package ids found")
                 rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:list --package2ids ${SFDX_NEW_PACKAGE_ID} --json "
                 printf rmsg
 
                 def response = jsonParse( rmsg )
-//                if ( response. ) {
-//                }
                 
-                //def allPackageVersionsAvailable = jsonParse(rmsg).result
                 def allPackageVersionsAvailable = response.result
 
                 // loop through all allPackageVersionsAvailable until you find the new one with the SFDX_NEW_PACKAGE_VERSION_ID
@@ -383,8 +393,6 @@ node {
             if (rc != 0) { 
                 error "deletion of scratch org ${HUB_ORG} failed"
             }
-
-//            cleanWs cleanWhenAborted: false, cleanWhenFailure: false, cleanWhenNotBuilt: false, cleanWhenUnstable: false, notFailBuild: true
         }
 
         stage('Post Build Notifications') {
