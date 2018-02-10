@@ -1,6 +1,6 @@
 {
   "sfdcLoginUrl": "https://login.salesforce.com",
-  "sourceApiVersion": "41.0",
+  "sourceApiVersion": "42.0",
   "packageDirectories": [
     {
       "path": "sfdx-source/fflib",
