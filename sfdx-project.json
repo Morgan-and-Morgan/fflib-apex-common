@@ -12,8 +12,7 @@
       "ancestorId": "",
       "dependencies": [
         {
-            "packageId": "04t1J0000004UImQAM",
-            "versionNumber": "0.1.0.LATEST"
+            "subscriberPackageVersionId": "04t1J0000004UImQAM"
         }
       ]
     }
