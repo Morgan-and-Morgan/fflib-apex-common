@@ -6,9 +6,9 @@
       "path": "sfdx-source/fflib",
       "default": true,
       "id": "0Ho1J000000000BSAQ",
-      "versionName": "v0.1 trial",
-      "versionDescription": "ver 0.1 with no ancestor with no namespace",
-      "versionNumber": "0.1.0.NEXT",
+      "versionName": "v0.2 trials",
+      "versionDescription": "ver 0.2 tials",
+      "versionNumber": "0.2.0.NEXT",
       "ancestorId": "",
       "dependencies": [
         {
