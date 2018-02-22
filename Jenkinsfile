@@ -2,11 +2,10 @@
 import groovy.json.JsonSlurperClassic
 
 /*
- * @version 0.2.20180131
+ * @version 0.2.1.20180222
  *
  *  Change log:
- *  - incorporate the GIT commit tag into the package creation process
- *  - Issue with package creation on branch forcing upstream packages to be on branch as well.   https://success.salesforce.com/0D53A00003P8qv3
+ *  - commented out the "printf" commands as there was a potential issue that an illegal character was trying to be published
  * 
  *  Backlog:
  *  - Potential processing issue on Jenkins where source:push throws error
@@ -112,6 +111,7 @@ node {
     def CONNECTED_APP_CONSUMER_KEY=env.CONNECTED_APP_CONSUMER_KEY_DH
 
     def toolbelt = tool 'sfdx-cli-toolbelt'
+    def pmdtoolbelt = tool 'pmd-toolbelt'
 
     stage('Checkout Source') {
         // when running in multi-branch job, one must issue this command
@@ -136,7 +136,7 @@ node {
 
             echo("Create Scratch Org...")
             rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:org:create --definitionfile config/project-scratch-def.json --json --setdefaultusername"
-            printf rmsg
+            //printf rmsg
 
             // need to pull out assigned username from the scratch org that was just generated
             echo('Deserialize the force:org:create response')
@@ -166,7 +166,7 @@ node {
 
             echo("finding all package versions available")
             rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:list  --json "
-            printf rmsg
+            //printf rmsg
             
             def allPackageVersionsAvailable = jsonParse(rmsg).result
 
@@ -193,9 +193,9 @@ node {
 
                         //rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install --id ${versionIdToInstall} --json --wait 3 "
                         rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install --id ${packageVersion.SubscriberPackageVersionId} --json --wait 3 "
-                        echo("mark pkg-install 1")
-                        printf rmsg
-                        echo("mark pkg-install 2")
+                        //echo("mark pkg-install 1")
+                        //printf rmsg
+                        //echo("mark pkg-install 2")
                         def response = jsonParse(rmsg)
                         echo("package install response == ${response}")
 
@@ -226,7 +226,7 @@ node {
         stage('Compile') {
             echo("Push To Test Org And Compile")
             rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:source:push --targetusername ${SFDC_USERNAME} --json"
-            printf rmsg
+            //printf rmsg
 
             def response = jsonParse( rmsg )
 
@@ -247,7 +247,6 @@ node {
             echo( 'Run All Local Apex Tests' )
             sh "mkdir -p ${RUN_ARTIFACT_DIR}"
             timeout(time: 120, unit: 'SECONDS') {
-                //rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:apex:test:run --testlevel RunLocalTests --outputdir ${RUN_ARTIFACT_DIR} --resultformat tap --targetusername ${SFDC_USERNAME}"
                 rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:apex:test:run --testlevel RunLocalTests --outputdir ${RUN_ARTIFACT_DIR} --resultformat tap --targetusername ${SFDC_USERNAME} --json"
                 def response = jsonParse( rmsg )
                 if (response.status != 0) {
@@ -258,6 +257,13 @@ node {
                 // Process all unit test reports
                 echo( "Collect All Test Results")
                 junit keepLongStdio: true, testResults: "${RUN_ARTIFACT_DIR}/**/*-junit.xml"
+            }
+
+            timeout(time: 120, unit: 'SECONDS') {
+                rmsg = sh returnStdout: true, script: "${pmdtoolbelt}/pmd-bin-6.0.1/bin/run.sh pmd -d sfdx-source -l apex -r ${RUN_ARTIFACT_DIR}/pmd_report.xml -f xml -rulesets category/apex/errorprone.xml -failOnViolation false"
+                //printf rmsg
+                echo( rmsg )
+                pmd canComputeNew: false, defaultEncoding: '', healthy: '25%', pattern: "${RUN_ARTIFACT_DIR}/pmd_report.xml", unHealthy: '10%'
             }
         }
 
@@ -291,7 +297,7 @@ node {
             echo ("commandScriptString == ${commandScriptString}")
 
             rmsg = sh returnStdout: true, script: commandScriptString
-            printf rmsg
+            //printf rmsg
 
             def packageVersionCreationResponse = jsonParse(rmsg)
 
@@ -314,7 +320,7 @@ node {
                                 // use the packageVersionCreationResponse.result.Id for this command verses SFDX_NEW_PACKAGE_VERSION_ID because we are yet
                                 //  certain that the package was created correctly
                                 rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:create:get --package2createrequestid ${packageVersionCreationResponse.result.Id} --json"
-                                printf rmsg
+                                //printf rmsg
 
                                 def jsonSlurper2 = new JsonSlurperClassic()
                 
@@ -362,7 +368,7 @@ node {
                 // then a package was created.  Record its finger prints
                 echo("finding all package versions for package ids found")
                 rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package2:version:list --package2ids ${SFDX_NEW_PACKAGE_ID} --json "
-                printf rmsg
+                //printf rmsg
 
                 def response = jsonParse( rmsg )
                 
@@ -383,8 +389,7 @@ node {
                 }
             }
             
-            fingerprint "${RUN_ARTIFACT_DIR}/*.packageVersion"
-
+            archiveArtifacts artifacts: "${RUN_ARTIFACT_DIR}/*.packageVersion", fingerprint: true, onlyIfSuccessful: true
         }
 
         stage('Clean') {
