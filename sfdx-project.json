@@ -5,14 +5,14 @@
     {
       "path": "sfdx-source/fflib",
       "default": true,
-      "id": "0Ho1J000000000BSAQ",
-      "versionName": "v0.2 trials",
-      "versionDescription": "ver 0.2 tials",
-      "versionNumber": "0.2.0.NEXT",
+      "id": "0Ho1J000000000VSAQ",
+      "versionName": "v0.1.x",
+      "versionDescription": "ver 0.1 trials",
+      "versionNumber": "0.1.0.NEXT",
       "ancestorId": "",
       "dependencies": [
         {
-            "subscriberPackageVersionId": "04t1J0000004UImQAM"
+            "subscriberPackageVersionId": "04t1J0000004UKTQA2"
         }
       ]
     }
