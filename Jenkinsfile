@@ -2,13 +2,18 @@
 import groovy.json.JsonSlurperClassic
 
 /*
- * @version 0.3.0.SNAPSHOT
+ * @version 0.3.0.20180226
  *
  *  Change log:
- *  - commented out the "printf" commands as there was a potential issue that an illegal character was trying to be published
- * 
+ *  - switched format to a "declarative pipeline" model.
+ *  - build now is triggered from upstream project
+ *  - build now utilizes the "post" stage to clean up scratch org and also post results to Slack
+ *  - stage "checkout source" not required now that this is setup as a "declarative pipeline"
+ *
  *  Backlog:
- *  - Potential processing issue on Jenkins where source:push throws error
+ *  - verify that the artifacts that Jenkins lists for a build are the original links and not links to other builds that have included that artifact as well
+ *  - figure out how to specify which upstream projects should be monitored for build trigger outside of this file so that all projects can use same build script.
+ * 
  */
 
 pipeline {
@@ -44,8 +49,8 @@ pipeline {
 
 
     triggers {
+        // ref -- https://jenkins.io/doc/book/pipeline/syntax/#triggers
         //cron('H */4 * * 1-5')
-        // TODO: Figure out how to set this up!!!!!
         //upstream(upstreamProjects: 'job1,job2', threshold: hudson.model.Result.SUCCESS)
         //upstream(upstreamProjects: "some_project/some_branch", threshold: hudson.model.Result.SUCCESS)
         //upstream(upstreamProjects: "some_project/" + env.BRANCH_NAME.replaceAll("/", "%2F"), threshold: hudson.model.Result.SUCCESS)
@@ -55,13 +60,6 @@ pipeline {
     }
 
     stages {
-//        stage('Checkout Source') {
-//            // when running in multi-branch job, one must issue this command
-//            steps {
-//                checkout scm
-//            }
-//        }
-
         stage('Validate') {
             steps {
                 script {
