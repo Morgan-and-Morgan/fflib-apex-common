@@ -2,18 +2,18 @@
 import groovy.json.JsonSlurperClassic
 
 /*
- * @version 0.3.0.20180226
+ * @version 0.3.1.20180315
+ *      https://gist.github.com/ImJohnMDaniel/9417601091c01277ef6bb51ad06e1b91
  *
  *  Change log:
- *  - switched format to a "declarative pipeline" model.
- *  - build now is triggered from upstream project
- *  - build now utilizes the "post" stage to clean up scratch org and also post results to Slack
- *  - stage "checkout source" not required now that this is setup as a "declarative pipeline"
+ *  - cleaned up environment variables.  They now no longer refer to "_DH" for "DreamHouse App"
+ *  - corrected references to obsolete method of "handleError"
+ *  - trying new configuration on upstream project trigger references.
  *
  *  Backlog:
  *  - verify that the artifacts that Jenkins lists for a build are the original links and not links to other builds that have included that artifact as well
  *  - figure out how to specify which upstream projects should be monitored for build trigger outside of this file so that all projects can use same build script.
- * 
+ *
  */
 
 pipeline {
@@ -26,10 +26,11 @@ pipeline {
         def SFDX_NEW_PACKAGE_ID = ""
         def SFDX_NEW_PACKAGE_VERSION_ID = ""
 
-        def HUB_ORG = "${env.HUB_ORG_DH}"
-        def SFDC_HOST = "${env.SFDC_HOST_DH}"
-        def JWT_KEY_CRED_ID = "${env.JWT_CRED_ID_DH}"
-        def CONNECTED_APP_CONSUMER_KEY = "${env.CONNECTED_APP_CONSUMER_KEY_DH}"
+        def SFDC_DEV_HUB_USERNAME = "${env.SFDC_DEV_HUB_USERNAME}"
+        def SFDC_DEV_HUB_HOST = "${env.SFDC_DEV_HUB_HOST}"
+
+        def JWT_KEY_CRED_ID = "${env.JWT_CRED_ID}"
+        def CONNECTED_APP_CONSUMER_KEY = "${env.CONNECTED_APP_CONSUMER_KEY}"
 
         // Tools 
         def toolbelt = tool 'sfdx-cli-toolbelt'
@@ -56,7 +57,9 @@ pipeline {
         //upstream(upstreamProjects: "some_project/" + env.BRANCH_NAME.replaceAll("/", "%2F"), threshold: hudson.model.Result.SUCCESS)
 
         //working attempts
-        upstream( upstreamProjects: "Salesforce-DX-Projects/fflib-apex-mocks/mm-master-sfdx", threshold: hudson.model.Result.SUCCESS )
+        //upstream( upstreamProjects: "Salesforce-DX-Projects/fflib-apex-common/mm-master-sfdx", threshold: hudson.model.Result.SUCCESS )
+        //upstream( upstreamProjects: "Salesforce-DX-Projects/fflib-apex-common,Salesforce-DX-Projects/mmlib/" + env.BRANCH_NAME.replaceAll("/", "%2F"), threshold: hudson.model.Result.SUCCESS )
+        upstream( upstreamProjects: "Salesforce-DX-Projects/fflib-apex-mocks", threshold: hudson.model.Result.SUCCESS )
     }
 
     stages {
@@ -77,13 +80,22 @@ pipeline {
                 script{
                     sh "mkdir -p ${RUN_ARTIFACT_DIR}"
                 }
+                
+                // process the sfdx-project.json file for later user
+                echo('Deserialize the sfdx-project.json ')
+                
+                script {
+                    def sfdxProjectFileContents = jsonParse( readFile('sfdx-project.json') )                
+                    SFDX_PROJECT = sfdxProjectFileContents
+                }
                     
-                echo("Authenticate To Dev Hub...")
                 withCredentials( [ file( credentialsId: JWT_KEY_CRED_ID, variable: 'jwt_key_file') ] ) {
+                    echo("Authenticate To Dev Hub...")
                     script {
-                        rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:auth:jwt:grant --clientid ${CONNECTED_APP_CONSUMER_KEY} --username ${HUB_ORG} --jwtkeyfile ${jwt_key_file} --setdefaultdevhubusername --instanceurl ${SFDC_HOST}"
-                        if (rc != 0) { handleError('hub org authorization failed') }
+                        rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:auth:jwt:grant --clientid ${CONNECTED_APP_CONSUMER_KEY} --username ${SFDC_DEV_HUB_USERNAME} --jwtkeyfile ${jwt_key_file} --setdefaultdevhubusername --instanceurl ${SFDC_DEV_HUB_HOST}"
+                        if (rc != 0) { error "hub org authorization failed" }
                     }
+                
                     echo("Create Scratch Org...")
                     script {
                         rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:org:create --definitionfile config/project-scratch-def.json --json --setdefaultusername"
@@ -91,24 +103,12 @@ pipeline {
                         // need to pull out assigned username from the scratch org that was just generated
                         echo('Deserialize the force:org:create response')
 
-                        //def jsonSlurper = new JsonSlurperClassic()
-                        //def robj = jsonSlurper.parseText(rmsg)
                         def robj = jsonParse( rmsg )
-                        
-                        //if (robj.status != 0) { handleError('org creation failed: ' + robj.message) }
-                        if (robj.status != 0) { error('org creation failed: ' + robj.message) }
-                        
+
+                        if (robj.status != 0) { error "scratch org creation failed: ${robj.message}" }
+
                         SFDC_USERNAME=robj.result.username
                         robj = null
-                        jsonSlurper = null 
-                    }
-
-                    // process the sfdx-project.json file for later user
-                    echo('Deserialize the sfdx-project.json ')
-                    
-                    script {
-                        def sfdxProjectFileContents = jsonParse( readFile('sfdx-project.json') )                
-                        SFDX_PROJECT = sfdxProjectFileContents
                     }
                 }
             }
@@ -160,7 +160,7 @@ pipeline {
                                 }
                                 // 
                                 //TODO : Need to setup the check to ensure that package version has been installed.
-                                //                          handleError()
+                                //                          error 
                                 //                            def installationRequest = jsonSlurper.parseText(rmsg).result
                                 //
                                 //                            rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:package:install:get -id ${versionIdToInstall} --json --wait 3 "
@@ -181,14 +181,14 @@ pipeline {
             steps {
                 script {
                     echo("Push To Test Org And Compile")
-                    rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:source:push --targetusername ${SFDC_USERNAME} --json"
+                    rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:source:push --json"
                     //printf rmsg
 
                     def response = jsonParse( rmsg )
 
                     if (response.status != 0) {
                         echo(response)
-                        handleError("push failed -- ${response.message}")
+                        error "push failed -- ${response.message}"
                     }
                 }
             }
@@ -202,11 +202,11 @@ pipeline {
                         echo( 'Run All Local Apex Tests' )
                         timeout(time: 120, unit: 'SECONDS') {
                             script {
-                                rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:apex:test:run --testlevel RunLocalTests --outputdir ${RUN_ARTIFACT_DIR} --resultformat tap --targetusername ${SFDC_USERNAME} --json"
+                                rmsg = sh returnStdout: true, script: "${toolbelt}/sfdx force:apex:test:run --testlevel RunLocalTests --outputdir ${RUN_ARTIFACT_DIR} --resultformat tap --json"
                                 def response = jsonParse( rmsg )
                                 if (response.status != 0) {
                                     echo(response)
-                                    handleError("apex test run failed -- ${response.message}")
+                                    error "apex test run failed -- ${response.message}"
                                 }
 
                                 // Process all unit test reports
@@ -248,11 +248,11 @@ pipeline {
                     }
 
                     if ( SFDX_NEW_PACKAGE_ID == null ) {
-                        handleError( "unable to determine SFDX_NEW_PACKAGE_ID in stage:package")
+                        error  "unable to determine SFDX_NEW_PACKAGE_ID in stage:package"
                     }
 
                     if ( directoryToUseForPackageInstall == null ) {
-                        handleError( "unable to determine the package directory for package creation in stage:package")
+                        error  "unable to determine the package directory for package creation in stage:package"
                     }
 
                     def commandScriptString = "${toolbelt}/sfdx force:package2:version:create --directory ${directoryToUseForPackageInstall} --json --tag ${env.BUILD_TAG.replaceAll(' ','-')}"
@@ -271,7 +271,7 @@ pipeline {
 
                     if ( packageVersionCreationResponse.status != 0 ) {
                         echo( packageVersionCreationResponse )
-                        handleError( "package version creation has failed -- ${packageVersionCreationResponse.message}")
+                        error "package version creation has failed -- ${packageVersionCreationResponse.message}"
                     }
 
                     if ( packageVersionCreationResponse.status == 0 ) {
@@ -296,7 +296,7 @@ pipeline {
                                         echo ("packageVersionCreationCheckResponse == ${packageVersionCreationCheckResponse}")
 
                                         if ( packageVersionCreationCheckResponse.status != 0 ) {
-                                            handleError( "force:package2:version:create:get failed -- ${packageVersionCreationCheckResponse.message}")
+                                            error "force:package2:version:create:get failed -- ${packageVersionCreationCheckResponse.message}"
                                         }
 
                                         // The JSON "result" is currently an array.  That is a SFDX bug -- W-4621618
@@ -304,7 +304,7 @@ pipeline {
                                         def packageVersionCreationCheckResponseResult = jsonSlurper2.parseText(rmsg).result[0]
                                         
                                         if ( packageVersionCreationCheckResponseResult.Status == 'Error' ) {
-                                            handleError( "force:package2:version:create:get failed -- ${packageVersionCreationCheckResponseResult.message}")
+                                            error "force:package2:version:create:get failed -- ${packageVersionCreationCheckResponseResult.message}"
                                         }
                                         else if ( packageVersionCreationCheckResponseResult.Status == "Success" ) {
                                             SFDX_NEW_PACKAGE_VERSION_ID = packageVersionCreationCheckResponseResult.Package2VersionId
@@ -371,7 +371,7 @@ pipeline {
             script {
                 rc = sh returnStatus: true, script: "${toolbelt}/sfdx force:org:delete --targetusername ${SFDC_USERNAME} --noprompt"
                 if (rc != 0) { 
-                    error "deletion of scratch org ${HUB_ORG} failed"
+                    error "deletion of scratch org ${SFDC_USERNAME} failed"
                 }
             }
         }
